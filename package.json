@@ -1,0 +1,25 @@
+{
+  "name": "black-horse-shoe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Black Horse Shoe — commerce operating system: desktop ERP, e-commerce storefront, centralized API, Telegram bot",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "api": "npm run start:dev --workspace apps/api",
+    "api:build": "npm run build --workspace apps/api",
+    "web": "npm run dev --workspace apps/web",
+    "web:build": "npm run build --workspace apps/web",
+    "web:start": "npm run start --workspace apps/web",
+    "desktop:build": "npm run build --workspace apps/desktop",
+    "desktop": "npm run build --workspace apps/desktop && npm run start --workspace apps/desktop",
+    "bot": "npm run dev --workspace apps/bot",
+    "db:generate": "npm run prisma:generate --workspace apps/api",
+    "db:migrate": "npm run prisma:migrate --workspace apps/api",
+    "db:seed": "npm run prisma:seed --workspace apps/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

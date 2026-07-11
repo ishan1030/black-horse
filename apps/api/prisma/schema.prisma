@@ -1,0 +1,452 @@
+// Black Horse Shoe — single source of truth.
+// Principles: UUID PKs, UTC timestamps, soft delete on catalog entities,
+// Decimal money, append-only inventory ledger, auditability.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── enums ─────────────────────────
+
+enum AdminRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum MovementType {
+  PURCHASE
+  POS_SALE
+  ONLINE_ORDER
+  RETURN
+  REFUND
+  DAMAGE
+  MANUAL_ADJUSTMENT
+  TRANSFER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  COD
+  FONEPAY
+  CASH
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum NotificationChannel {
+  IN_APP
+  TELEGRAM
+  EMAIL
+}
+
+// ───────────────────────── people ─────────────────────────
+
+model AdminUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole @default(STAFF)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  inventoryMovements InventoryMovement[]
+  inStoreSales       InStoreSale[]
+  expenses           Expense[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+}
+
+model Customer {
+  id        String    @id @default(uuid())
+  email     String?   @unique
+  phone     String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  addresses    Address[]
+  orders       Order[]
+  wishlist     Wishlist[]
+  reviews      Review[]
+  inStoreSales InStoreSale[]
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  customerId String
+  label      String   @default("Home")
+  line1      String
+  line2      String?
+  city       String
+  district   String?
+  province   String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  orders   Order[]
+
+  @@index([customerId])
+}
+
+// ───────────────────────── catalog ─────────────────────────
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  parentId  String?
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  categoryId  String
+  material    String?
+  isPublished Boolean   @default(false)
+  isFeatured  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  category Category       @relation(fields: [categoryId], references: [id])
+  variants ProductVariant[]
+  images   ProductImage[]
+  wishlist Wishlist[]
+  reviews  Review[]
+
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id                String    @id @default(uuid())
+  productId         String
+  sku               String    @unique
+  size              String
+  color             String
+  price             Decimal   @db.Decimal(12, 2)
+  costPrice         Decimal   @db.Decimal(12, 2)
+  // Cached quantity. NEVER written directly — only via InventoryService
+  // inside a transaction that also appends an InventoryMovement.
+  stockQty          Int       @default(0)
+  lowStockThreshold Int       @default(5)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  product          Product             @relation(fields: [productId], references: [id])
+  movements        InventoryMovement[]
+  orderItems       OrderItem[]
+  inStoreSaleItems InStoreSaleItem[]
+
+  @@unique([productId, size, color])
+  @@index([productId])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  alt       String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+// ───────────────────────── inventory ledger ─────────────────────────
+
+// Append-only. Every stock change creates one row; stock is never overwritten.
+model InventoryMovement {
+  id          String       @id @default(uuid())
+  variantId   String
+  previousQty Int
+  newQty      Int
+  delta       Int
+  type        MovementType
+  // id of the order / in-store sale / purchase batch that caused this
+  referenceId String?
+  source      String // e.g. "pos", "web", "admin", "telegram"
+  userId      String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  user    AdminUser?     @relation(fields: [userId], references: [id])
+
+  @@index([variantId, createdAt])
+  @@index([type])
+  @@index([referenceId])
+}
+
+// ───────────────────────── orders (online) ─────────────────────────
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  customerId  String
+  addressId   String?
+  status      OrderStatus @default(PENDING)
+  subtotal    Decimal     @db.Decimal(12, 2)
+  discount    Decimal     @default(0) @db.Decimal(12, 2)
+  shippingFee Decimal     @default(0) @db.Decimal(12, 2)
+  total       Decimal     @db.Decimal(12, 2)
+  couponId    String?
+  note        String?
+  placedAt    DateTime    @default(now())
+  confirmedAt DateTime?
+  packedAt    DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  closedAt    DateTime? // cancelled / returned / refunded
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  customer Customer    @relation(fields: [customerId], references: [id])
+  address  Address?    @relation(fields: [addressId], references: [id])
+  coupon   Coupon?     @relation(fields: [couponId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([status, placedAt])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  variantId String
+  // denormalized snapshot so history survives catalog edits
+  nameSnapshot String
+  skuSnapshot  String
+  unitPrice    Decimal @db.Decimal(12, 2)
+  quantity     Int
+  lineTotal    Decimal @db.Decimal(12, 2)
+
+  order   Order          @relation(fields: [orderId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  orderId     String
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  amount      Decimal       @db.Decimal(12, 2)
+  providerRef String? // Fonepay trace id etc.
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+}
+
+// ───────────────────────── promotions & social ─────────────────────────
+
+model Coupon {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  discountType  DiscountType
+  value         Decimal      @db.Decimal(12, 2)
+  minSpend      Decimal?     @db.Decimal(12, 2)
+  maxUses       Int?
+  usedCount     Int          @default(0)
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  orders Order[]
+}
+
+model Wishlist {
+  id         String   @id @default(uuid())
+  customerId String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([customerId, productId])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  customerId String
+  productId  String
+  rating     Int // 1..5, validated in service layer
+  title      String?
+  body       String?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([customerId, productId])
+  @@index([productId, isApproved])
+}
+
+// ───────────────────────── POS (in-store) ─────────────────────────
+
+model InStoreSale {
+  id             String        @id @default(uuid())
+  saleNumber     String        @unique
+  cashierId      String
+  customerId     String?
+  subtotal       Decimal       @db.Decimal(12, 2)
+  discount       Decimal       @default(0) @db.Decimal(12, 2)
+  vatAmount      Decimal       @default(0) @db.Decimal(12, 2) // 13% included
+  total          Decimal       @db.Decimal(12, 2)
+  paymentMethod  PaymentMethod
+  tenderedAmount Decimal?      @db.Decimal(12, 2)
+  changeAmount   Decimal?      @db.Decimal(12, 2)
+  note           String?
+  createdAt      DateTime      @default(now())
+
+  cashier  AdminUser         @relation(fields: [cashierId], references: [id])
+  customer Customer?         @relation(fields: [customerId], references: [id])
+  items    InStoreSaleItem[]
+
+  @@index([createdAt])
+}
+
+model InStoreSaleItem {
+  id           String  @id @default(uuid())
+  saleId       String
+  variantId    String
+  nameSnapshot String
+  skuSnapshot  String
+  unitPrice    Decimal @db.Decimal(12, 2)
+  quantity     Int
+  lineTotal    Decimal @db.Decimal(12, 2)
+
+  sale    InStoreSale    @relation(fields: [saleId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([saleId])
+  @@index([variantId])
+}
+
+// ───────────────────────── finance & ops ─────────────────────────
+
+model Expense {
+  id          String   @id @default(uuid())
+  title       String
+  category    String // rent, salaries, materials, marketing, misc …
+  amount      Decimal  @db.Decimal(12, 2)
+  incurredOn  DateTime
+  recordedBy  String
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recorder AdminUser @relation(fields: [recordedBy], references: [id])
+
+  @@index([incurredOn])
+  @@index([category])
+}
+
+// Photos posted from Telegram (or the admin) that appear on the
+// storefront's "From the workshop" gallery. Caption = website description.
+model GalleryPost {
+  id          String   @id @default(uuid())
+  imageUrl    String
+  caption     String
+  source      String   @default("telegram")
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([isPublished, createdAt])
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String?
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  body      String
+  isRead    Boolean             @default(false)
+  createdAt DateTime            @default(now())
+
+  user AdminUser? @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+}
+
+model AppSettings {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String // e.g. "order.status_change", "product.update"
+  entity    String // table / aggregate name
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user AdminUser? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+}

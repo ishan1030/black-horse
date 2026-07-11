@@ -1,0 +1,279 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Black Horse ERP — Point of Sale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#111111; --paper:#FFFFFF; --neutral:#F5F5F5; --accent:#2B2B2B;
+    --line:#E7E7E7; --muted:#6B6B6B; --faint:#9A9A9A;
+    --good:#1B7F4B; --good-bg:#E7F3EC; --warn:#A16207; --warn-bg:#FBF3E4; --bad:#B3261E;
+    --display:'Manrope',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif;
+    --radius:10px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--body);background:var(--neutral);color:var(--ink);
+    display:grid;grid-template-columns:236px 1fr;height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer;border:none;background:none}
+  :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  svg{display:block}
+
+  /* sidebar (same as dashboard) */
+  .side{background:var(--ink);color:#fff;display:flex;flex-direction:column;padding:24px 16px;height:100vh}
+  .side-logo{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:800;
+    font-size:14.5px;letter-spacing:.14em;padding:6px 12px 26px}
+  .side nav{display:flex;flex-direction:column;gap:2px;flex:1}
+  .side a{display:flex;align-items:center;gap:12px;color:rgba(255,255,255,.62);font-size:13.5px;
+    font-weight:500;padding:10px 12px;border-radius:8px;text-decoration:none;transition:background .15s,color .15s}
+  .side a:hover{color:#fff;background:rgba(255,255,255,.06)}
+  .side a[aria-current]{color:#fff;background:rgba(255,255,255,.12)}
+  .side-sec{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.32);padding:20px 12px 8px}
+  .side-user{display:flex;align-items:center;gap:10px;padding:12px;border-top:1px solid rgba(255,255,255,.1);margin-top:12px}
+  .avatar{width:32px;height:32px;border-radius:999px;background:#fff;color:var(--ink);display:grid;
+    place-items:center;font-weight:600;font-size:12px}
+  .side-user b{font-size:13px;font-weight:600;display:block}
+  .side-user span{font-size:11.5px;color:rgba(255,255,255,.45)}
+
+  /* main split */
+  .pos{display:grid;grid-template-columns:1fr 400px;height:100vh;min-width:0}
+  .catalog{padding:24px 24px 24px 28px;overflow-y:auto;min-width:0}
+  .pos-top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .pos-top h1{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.01em}
+  .pos-top p{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .pos-top-actions{display:flex;gap:10px}
+  .btn-line{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:9px 16px;
+    font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px}
+  .btn-line:hover{border-color:var(--ink)}
+
+  .search{display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--line);
+    border-radius:8px;padding:12px 16px;font-size:14px;margin-bottom:14px}
+  .search input{border:none;outline:none;font:inherit;flex:1;background:transparent}
+  .search kbd{font-family:var(--body);font-size:10.5px;color:var(--faint);border:1px solid var(--line);
+    border-radius:4px;padding:2px 6px}
+
+  .chips{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:7px 16px;
+    font-size:12.5px;font-weight:500;color:var(--muted);transition:all .15s}
+  .chip:hover{border-color:var(--ink);color:var(--ink)}
+  .chip[aria-current]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:14px}
+  .tile{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;text-align:left;transition:border-color .15s,transform .1s;display:flex;flex-direction:column;gap:10px}
+  .tile:hover{border-color:var(--ink)}
+  .tile:active{transform:scale(.985)}
+  .tile-img{background:var(--neutral);border-radius:6px;aspect-ratio:4/3;display:grid;place-items:center}
+  .tile-img svg{width:62%}
+  .tile b{font-size:13px;font-weight:600;line-height:1.35}
+  .tile .meta{display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+  .tile .p{font-weight:600;font-variant-numeric:tabular-nums}
+  .tile .stk{font-size:11px;color:var(--muted)}
+  .tile .stk.low{color:var(--warn);font-weight:500}
+
+  /* cart panel */
+  .cart{background:var(--paper);border-left:1px solid var(--line);display:flex;flex-direction:column;height:100vh}
+  .cart-head{padding:20px 22px 0}
+  .cart-head h2{font-size:15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .cart-head h2 span{font-size:11.5px;color:var(--muted);font-weight:500}
+  .customer{display:flex;align-items:center;gap:10px;border:1px dashed var(--line);border-radius:8px;
+    padding:11px 14px;margin:14px 0 6px;font-size:13px;color:var(--muted);width:100%}
+  .customer:hover{border-color:var(--ink);color:var(--ink)}
+
+  .lines{flex:1;overflow-y:auto;padding:8px 22px}
+  .line{display:grid;grid-template-columns:44px 1fr auto;gap:12px;padding:14px 0;border-bottom:1px solid var(--neutral);align-items:center}
+  .line-img{background:var(--neutral);border-radius:6px;width:44px;height:44px;display:grid;place-items:center}
+  .line-img svg{width:70%}
+  .line b{font-size:13px;font-weight:600;display:block}
+  .line small{font-size:11.5px;color:var(--muted)}
+  .line-right{text-align:right}
+  .line-right .amt{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;display:block;margin-bottom:6px}
+  .qty{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+  .qty button{font-size:14px;color:var(--muted);width:16px}
+  .qty button:hover{color:var(--ink)}
+  .qty span{font-size:12.5px;font-weight:600;min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+
+  .totals{border-top:1px solid var(--line);padding:16px 22px;font-size:13px}
+  .trow{display:flex;justify-content:space-between;margin-bottom:9px;color:var(--muted)}
+  .trow b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  .trow .disc{color:var(--good);font-weight:600;font-variant-numeric:tabular-nums}
+  .trow.total{font-size:16px;color:var(--ink);font-weight:600;margin:12px 0 0;padding-top:12px;border-top:1px solid var(--neutral)}
+  .trow.total b{font-family:var(--display);font-size:19px;font-weight:800}
+
+  .pay{padding:0 22px 20px}
+  .pay-methods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .pm{border:1px solid var(--line);border-radius:8px;padding:11px 0;text-align:center;font-size:12.5px;
+    font-weight:500;color:var(--muted);transition:all .15s}
+  .pm:hover{border-color:var(--ink);color:var(--ink)}
+  .pm[aria-current]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .tender{display:flex;gap:8px;margin-bottom:12px}
+  .tender label{flex:1;display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);
+    letter-spacing:.06em;text-transform:uppercase}
+  .tender input{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;
+    font-size:14px;font-variant-numeric:tabular-nums;width:100%}
+  .tender input:focus{outline:none;border-color:var(--ink)}
+  .tender .change{color:var(--good);font-weight:600}
+  .complete{width:100%;background:var(--ink);color:#fff;border-radius:8px;padding:16px;font-size:14.5px;
+    font-weight:600;letter-spacing:.02em;transition:background .2s}
+  .complete:hover{background:var(--accent)}
+  .hold-note{text-align:center;font-size:11.5px;color:var(--faint);margin-top:10px}
+
+  @media (max-width:1180px){.pos{grid-template-columns:1fr 340px}}
+  @media (max-width:960px){body{grid-template-columns:1fr}.side{display:none}}
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="side-logo">
+    <svg width="36" height="18" viewBox="0 0 200 100" aria-hidden="true"><g fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path fill-rule="evenodd" stroke="none" d="M100 10 C151 10 192 29 192 52 C192 75 151 94 100 94 C49 94 8 75 8 52 C8 29 49 10 100 10 Z M98 18 C141 18 175 32 175 50 C175 68 141 82 98 82 C55 82 21 68 21 50 C21 32 55 18 98 18 Z"/><circle cx="126" cy="48" r="15"/><ellipse cx="104" cy="48" rx="26" ry="13" transform="rotate(-10 104 48)"/><circle cx="84" cy="44" r="11"/><path d="M56 8 C70 10 82 20 90 34 L74 48 C68 32 60 20 48 16 Z"/><path d="M58 8 L38 15 C34 17 35 23 39 24 L54 25 L66 18 Z"/><path d="M56 10 L51 0 L62 7 Z"/><path d="M65 8 L70 0 L74 8 Z"/><path d="M78 46 L58 50 L40 44" fill="none" stroke-width="9"/><path d="M86 54 L74 62 L66 72" fill="none" stroke-width="9"/><path d="M130 56 L146 64 L162 60" fill="none" stroke-width="9"/><path d="M124 62 L134 74 L144 82" fill="none" stroke-width="9"/><path d="M138 38 C152 26 166 22 180 26 C172 32 164 36 158 42 C166 46 172 52 176 60 C164 58 152 52 144 48 C138 45 136 41 138 38 Z"/></g></svg>
+    BLACK&nbsp;HORSE
+  </div>
+  <nav aria-label="Primary">
+    <a href="erp-dashboard.html"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="3" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>Dashboard</a>
+    <div class="side-sec">Catalog</div>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3 21 7.5v9L12 21 3 16.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 7.5 12 12l9-4.5M12 12v9" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Products</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Inventory</a>
+    <div class="side-sec">Sales</div>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 8h14l-1 12H6L5 8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.8"/></svg>Orders</a>
+    <a href="#" aria-current="page"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 21h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>POS</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c1-3 3-4.4 5.5-4.4s4.5 1.4 5.5 4.4M15.5 5.6a3.2 3.2 0 0 1 0 4.8M17.5 14.8c1.6.7 2.6 2 3 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Customers</a>
+    <div class="side-sec">Finance</div>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.8"/></svg>Expenses</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Reports</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.37.95a7 7 0 0 0-2.42-1.4L13.7 2.6h-3.4l-.37 2.54a7 7 0 0 0-2.42 1.4l-2.37-.95-2 3.46 2 1.55A7 7 0 0 0 5 12c0 .48.05.94.14 1.4l-2 1.55 2 3.46 2.37-.95a7 7 0 0 0 2.42 1.4l.37 2.54h3.4l.37-2.54a7 7 0 0 0 2.42-1.4l2.37.95 2-3.46-2-1.55c.09-.46.14-.92.14-1.4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Settings</a>
+  </nav>
+  <div class="side-user">
+    <div class="avatar">IB</div>
+    <div><b>Ishan B.</b><span>Owner · Admin</span></div>
+  </div>
+</aside>
+
+<div class="pos">
+  <div class="catalog">
+    <div class="pos-top">
+      <div>
+        <h1>Point of Sale</h1>
+        <p>Register 1 · Thamel flagship · Friday, 10 July 2026</p>
+      </div>
+      <div class="pos-top-actions">
+        <button class="btn-line">Hold sale</button>
+        <button class="btn-line">Recent sales</button>
+      </div>
+    </div>
+
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#6B6B6B" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="#6B6B6B" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input placeholder="Scan barcode or search products…" aria-label="Search products">
+      <kbd>F2</kbd>
+    </div>
+
+    <div class="chips">
+      <button class="chip" aria-current="true">All</button>
+      <button class="chip">Sneakers</button>
+      <button class="chip">Formal</button>
+      <button class="chip">Boots</button>
+      <button class="chip">Sandals</button>
+      <button class="chip">Accessories</button>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+  </div>
+
+  <aside class="cart" aria-label="Current sale">
+    <div class="cart-head">
+      <h2>Current sale <span>#POS-0412</span></h2>
+      <button class="customer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Add customer (optional)
+      </button>
+    </div>
+
+    <div class="lines">
+      <div class="line">
+        <div class="line-img"><svg viewBox="0 0 560 260" fill="none"><path d="M30 210 C40 160 90 140 140 130 C195 118 240 88 275 58 C295 41 313 36 330 48 C365 74 420 108 470 122 C510 133 535 152 538 185 C540 202 528 212 505 214 L60 220 C40 220 26 218 30 210 Z" fill="#BDBDBD"/></svg></div>
+        <div><b>Kathmandu Runner</b><small>Black · EU 42</small></div>
+        <div class="line-right">
+          <span class="amt">Rs. 7,450</span>
+          <span class="qty"><button aria-label="Decrease">–</button><span>1</span><button aria-label="Increase">+</button></span>
+        </div>
+      </div>
+      <div class="line">
+        <div class="line-img"><svg viewBox="0 0 560 260" fill="none"><path d="M30 210 C40 160 90 140 140 130 C195 118 240 88 275 58 C295 41 313 36 330 48 C365 74 420 108 470 122 C510 133 535 152 538 185 C540 202 528 212 505 214 L60 220 C40 220 26 218 30 210 Z" fill="#BDBDBD"/></svg></div>
+        <div><b>Everest Oxford</b><small>Brown · EU 43</small></div>
+        <div class="line-right">
+          <span class="amt">Rs. 9,200</span>
+          <span class="qty"><button aria-label="Decrease">–</button><span>1</span><button aria-label="Increase">+</button></span>
+        </div>
+      </div>
+      <div class="line">
+        <div class="line-img"><svg viewBox="0 0 560 260" fill="none"><path d="M30 210 C40 160 90 140 140 130 C195 118 240 88 275 58 C295 41 313 36 330 48 C365 74 420 108 470 122 C510 133 535 152 538 185 C540 202 528 212 505 214 L60 220 C40 220 26 218 30 210 Z" fill="#BDBDBD"/></svg></div>
+        <div><b>Himal Court</b><small>White · EU 41</small></div>
+        <div class="line-right">
+          <span class="amt">Rs. 6,900</span>
+          <span class="qty"><button aria-label="Decrease">–</button><span>1</span><button aria-label="Increase">+</button></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="totals">
+      <div class="trow"><span>Subtotal · 3 items</span><b>Rs. 23,550</b></div>
+      <div class="trow"><span>Discount</span><span class="disc">− Rs. 1,000</span></div>
+      <div class="trow"><span>VAT 13% (included)</span><b>Rs. 2,594</b></div>
+      <div class="trow total"><span>Total</span><b>Rs. 22,550</b></div>
+    </div>
+
+    <div class="pay">
+      <div class="pay-methods">
+        <button class="pm" aria-current="true">Cash</button>
+        <button class="pm">Fonepay</button>
+        <button class="pm">Card</button>
+      </div>
+      <div class="tender">
+        <label>Tendered<input value="Rs. 25,000" aria-label="Amount tendered"></label>
+        <label>Change<input class="change" value="Rs. 2,450" readonly aria-label="Change due"></label>
+      </div>
+      <button class="complete">Complete sale — Rs. 22,550</button>
+      <p class="hold-note">F9 hold · F10 discount · F12 complete</p>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const products = [
+    ["Kathmandu Runner", 7450, "12 in stock", false],
+    ["Everest Oxford", 9200, "8 in stock", false],
+    ["Mustang Chelsea", 10800, "6 in stock", false],
+    ["Himal Court", 6900, "3 left", true],
+    ["Annapurna Trek", 12400, "9 in stock", false],
+    ["Patan Loafer", 8600, "11 in stock", false],
+    ["Terai Slide", 3200, "24 in stock", false],
+    ["Sagarmatha High", 13900, "2 left", true],
+    ["Newar Derby", 9800, "7 in stock", false],
+    ["Lumbini Low", 5400, "14 in stock", false],
+    ["Dolpa Boot", 11700, "5 left", true],
+    ["Care Kit", 950, "31 in stock", false],
+  ];
+  const shoe = '<svg viewBox="0 0 560 260" fill="none"><path d="M30 210 C40 160 90 140 140 130 C195 118 240 88 275 58 C295 41 313 36 330 48 C365 74 420 108 470 122 C510 133 535 152 538 185 C540 202 528 212 505 214 L60 220 C40 220 26 218 30 210 Z" fill="#CFCFCF"/><path d="M28 216 L540 208 C544 222 536 232 516 233 L58 238 C38 238 24 230 28 216 Z" fill="#BABABA"/></svg>';
+  document.getElementById("tiles").innerHTML = products.map(([n,p,s,low]) => `
+    <button class="tile" aria-label="Add ${n} to sale">
+      <span class="tile-img">${shoe}</span>
+      <b>${n}</b>
+      <span class="meta"><span class="p">Rs. ${p.toLocaleString("en-IN")}</span><span class="stk${low?" low":""}">${s}</span></span>
+    </button>`).join("");
+
+  // chip + payment method selection (mock)
+  for (const sel of [".chips .chip", ".pay-methods .pm"]) {
+    const els = document.querySelectorAll(sel);
+    els.forEach(el => el.addEventListener("click", () => {
+      els.forEach(e => e.removeAttribute("aria-current"));
+      el.setAttribute("aria-current", "true");
+    }));
+  }
+</script>
+
+</body>
+</html>

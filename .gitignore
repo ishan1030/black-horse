@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.log
+.env
+.env.local
+.env.*.local
+apps/api/uploads/
+.DS_Store
+Thumbs.db
+logs/
