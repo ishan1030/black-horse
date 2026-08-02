@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 /**
  * AI product copy from shoe photos. Three providers, checked in order:
- *   1. ANTHROPIC_API_KEY  → Claude (claude-opus-4-8, vision + structured output)
+ *   1. ANTHROPIC_API_KEY  → Anthropic vision + structured output
  *   2. GEMINI_API_KEY     → Google Gemini (gemini-2.5-flash)
  *   3. OPENROUTER_API_KEY → OpenRouter free vision models (no billing needed)
  * Dormant when no key is in the root .env — every caller falls back to
@@ -31,8 +31,8 @@ function getAnthropic(): Anthropic | null {
   return anthropicClient;
 }
 
-export function aiCopyProvider(): 'claude' | 'gemini' | 'openrouter' | null {
-  if (process.env.ANTHROPIC_API_KEY) return 'claude';
+export function aiCopyProvider(): 'anthropic' | 'gemini' | 'openrouter' | null {
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
   if (process.env.GEMINI_API_KEY) return 'gemini';
   if (process.env.OPENROUTER_API_KEY) return 'openrouter';
   return null;
@@ -58,7 +58,7 @@ async function toBase64(photos: Blob[]): Promise<string[]> {
   );
 }
 
-async function claudeCopy(
+async function anthropicCopy(
   images: string[],
   prompt: string,
 ): Promise<ShoeCopy | null> {
@@ -66,7 +66,7 @@ async function claudeCopy(
   if (!anthropic) return null;
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-8',
+    model: process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-8',
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -273,7 +273,7 @@ export async function generateShoeCopy(
 
   // Cascade: a provider with a dead/depleted key just falls through to the next.
   const attempts: Array<[string, () => Promise<ShoeCopy | null>]> = [
-    ['claude', () => claudeCopy(images, prompt)],
+    ['anthropic', () => anthropicCopy(images, prompt)],
     ['gemini', () => geminiCopy(images, prompt)],
     ['openrouter', () => openrouterCopy(images, prompt)],
   ];
