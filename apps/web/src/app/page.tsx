@@ -1,27 +1,41 @@
 import Link from 'next/link';
 import HeroScrollAnimation, { type HeroProduct } from '@/components/ui/hero-scroll-animation';
+import { ProductCard } from '@/components/product-card';
 import { Shoe } from '@/components/shoe';
-import { getCategories, getFeaturedProducts, getGalleryPosts, mediaUrl } from '@/lib/api';
+import { getCategories, getFeaturedProducts, getShopProducts, mediaUrl } from '@/lib/api';
 
 const MARQUEE_ITEMS = [
   'Crafted in Kathmandu',
   'Full-grain leather',
   '47 pairs of hands',
-  '2-year warranty',
+  '6-month warranty',
 ];
 
 const CRAFT_STATS = [
   { value: '47', label: 'pairs of hands' },
   { value: '72h', label: 'of finishing' },
-  { value: '2 yr', label: 'craft warranty' },
+  { value: '6 mo', label: 'craft warranty' },
 ];
 
 export default async function HomePage() {
-  const [products, categories, gallery] = await Promise.all([
+  const [products, categories, catalog] = await Promise.all([
     getFeaturedProducts(),
     getCategories(),
-    getGalleryPosts(),
+    getShopProducts(),
   ]);
+
+  // A random real product photo per category (re-rolled each revalidation).
+  const photosByCategory = new Map<string, string[]>();
+  for (const p of catalog) {
+    if (!p.images[0]) continue;
+    const list = photosByCategory.get(p.categorySlug) ?? [];
+    list.push(p.images[0].url);
+    photosByCategory.set(p.categorySlug, list);
+  }
+  const categoryPhoto = (slug: string): string | null => {
+    const list = photosByCategory.get(slug);
+    return list?.length ? list[Math.floor(Math.random() * list.length)] : null;
+  };
 
   const heroProducts: HeroProduct[] = products.map((p) => ({
     id: p.id,
@@ -55,61 +69,73 @@ export default async function HomePage() {
           <h2 className="font-display text-[clamp(26px,3vw,34px)] font-extrabold tracking-tight">
             Shop by Category
           </h2>
-          <Link href="/#featured" className="text-[13.5px] font-medium underline-offset-4 hover:underline">
+          <Link href="/products" className="text-[13.5px] font-medium underline-offset-4 hover:underline">
             View all →
           </Link>
         </div>
         <div className="grid gap-6 md:grid-cols-3">
-          {categories.slice(0, 3).map((cat) => (
-            <Link
-              key={cat.id}
-              href="/#featured"
-              className="group flex aspect-[421/380] flex-col justify-between overflow-hidden bg-neutral p-8 pt-10"
-            >
-              <Shoe className="m-auto w-[64%] transition-transform duration-450 ease-out group-hover:scale-105 group-hover:-rotate-2" />
-              <div className="flex items-end justify-between">
-                <div>
-                  <h3 className="font-display text-lg font-bold">{cat.name}</h3>
-                  <small className="text-[12.5px] text-muted">
-                    {cat.productCount > 0 ? `${cat.productCount} styles` : 'Explore'}
-                  </small>
+          {categories.slice(0, 3).map((cat) => {
+            const photo = categoryPhoto(cat.slug);
+            return (
+              <Link
+                key={cat.id}
+                href={`/products?type=${cat.slug}`}
+                className="group relative flex aspect-[421/380] flex-col justify-between overflow-hidden bg-neutral p-8 pt-10"
+              >
+                {photo ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mediaUrl(photo)}
+                      alt={cat.name}
+                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-450 ease-out group-hover:scale-[1.04]"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/55 to-transparent"
+                    />
+                  </>
+                ) : (
+                  <Shoe className="m-auto w-[64%] transition-transform duration-450 ease-out group-hover:scale-105 group-hover:-rotate-2" />
+                )}
+                <div className={`relative mt-auto flex items-end justify-between ${photo ? 'text-white' : ''}`}>
+                  <div>
+                    <h3 className="font-display text-lg font-bold">{cat.name}</h3>
+                    <small className={`text-[12.5px] ${photo ? 'text-white/75' : 'text-muted'}`}>
+                      {cat.productCount > 0 ? `${cat.productCount} styles` : 'Explore'}
+                    </small>
+                  </div>
+                  <span
+                    className={`grid h-9 w-9 place-items-center rounded-full border transition-colors ${
+                      photo
+                        ? 'border-white/70 group-hover:bg-white group-hover:text-ink'
+                        : 'border-ink group-hover:bg-ink group-hover:text-white'
+                    }`}
+                  >
+                    →
+                  </span>
                 </div>
-                <span className="grid h-9 w-9 place-items-center rounded-full border border-ink transition-colors group-hover:bg-ink group-hover:text-white">
-                  →
-                </span>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       </section>
       )}
 
-      {/* From the workshop — photos posted from Telegram */}
-      {gallery.length > 0 && (
-        <section aria-labelledby="workshop-h" className="px-5 pb-16 md:px-16 md:pb-24" style={{ paddingTop: 0 }}>
+      {/* The full collection — every product, revealed as you scroll */}
+      {catalog.length > 0 && (
+        <section aria-labelledby="collection-h" className="px-5 pb-20 md:px-16 md:pb-28" style={{ paddingTop: 0 }}>
           <div className="mb-10 flex items-end justify-between gap-4">
-            <h2 id="workshop-h" className="font-display text-[clamp(26px,3vw,34px)] font-extrabold tracking-tight">
-              From the workshop
+            <h2 id="collection-h" className="font-display text-[clamp(26px,3vw,34px)] font-extrabold tracking-tight">
+              The collection
             </h2>
-            <span className="text-[13.5px] font-medium text-muted">Fresh from Kathmandu</span>
+            <span className="text-[13.5px] font-medium text-muted">
+              {catalog.length} styles · all hand-finished
+            </span>
           </div>
-          <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-            {gallery.slice(0, 8).map((post) => (
-              <figure key={post.id} className="group">
-                <div className="relative aspect-square overflow-hidden bg-neutral">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={mediaUrl(post.imageUrl)}
-                    alt={post.caption || 'From the Black Horse workshop'}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-450 ease-out group-hover:scale-[1.04]"
-                  />
-                </div>
-                {post.caption && (
-                  <figcaption className="mt-3 text-[13px] leading-relaxed text-muted">
-                    {post.caption}
-                  </figcaption>
-                )}
-              </figure>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-3 xl:grid-cols-4">
+            {catalog.map((p) => (
+              <ProductCard key={p.id} product={p} />
             ))}
           </div>
         </section>
@@ -125,7 +151,7 @@ export default async function HomePage() {
           From tanneries in the Terai to workshops in Kathmandu — each shoe passes through
           47 pairs of hands before it reaches yours.
         </p>
-        <Link href="/" className="text-[13.5px] font-medium underline underline-offset-6">
+        <Link href="/about" className="text-[13.5px] font-medium underline underline-offset-6">
           Read our story →
         </Link>
         <div className="mt-14 flex flex-wrap justify-center gap-x-16 gap-y-8 md:gap-x-22">

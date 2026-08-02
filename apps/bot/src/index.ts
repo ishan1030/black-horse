@@ -1,7 +1,8 @@
 import * as path from 'node:path';
-import { Telegraf } from 'telegraf';
+import { Context, Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { ApiClient } from './api-client';
+import { aiCopyProvider, generateShoeCopy, ShoeCopy } from './copy';
 
 // Load the monorepo root .env (works from both src/ via ts-node and dist/).
 try {
@@ -58,6 +59,14 @@ bot.start((ctx) =>
       '· "new: Patan Loafer, 4500, formal, stock 10" → creates that product',
       '· caption with an existing product name → that product\'s page',
       '· any other caption → the "From the workshop" gallery',
+      '',
+      '🖼 Send several photos AS ONE ALBUM and they count as ONE shoe —',
+      'all angles land on the same product. Separate messages = separate shoes.',
+      '',
+      '🤖 AI copywriter: ' +
+        (aiCopyProvider()
+          ? `ON (${aiCopyProvider()}) — descriptions and captions are written from your photos.`
+          : 'OFF — add OPENROUTER_API_KEY (free, openrouter.ai), GEMINI_API_KEY, or ANTHROPIC_API_KEY to .env.'),
       '',
       `Your chat id: ${ctx.chat.id}` +
         (allowedChats.size === 0
@@ -180,7 +189,11 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-async function createProductFromPhoto(spec: NewProductSpec, photo: Blob) {
+async function createProductFromPhoto(
+  spec: NewProductSpec,
+  photos: Blob[],
+  copy: ShoeCopy | null,
+) {
   const categories = await api.get<Array<{ id: string; name: string }>>('/categories');
   const category =
     categories.find((c) => c.name.toLowerCase() === (spec.category ?? '').toLowerCase()) ??
@@ -202,7 +215,7 @@ async function createProductFromPhoto(spec: NewProductSpec, photo: Blob) {
       name: spec.name,
       slug: slugify(spec.name),
       categoryId: category.id,
-      description: `${spec.name} — crafted in Kathmandu.`,
+      description: copy?.description ?? `${spec.name} — crafted in Kathmandu.`,
       material: 'Leather',
       isPublished: true,
       variants: SIZES.map((size) => ({
@@ -216,10 +229,12 @@ async function createProductFromPhoto(spec: NewProductSpec, photo: Blob) {
     },
   );
 
-  const form = new FormData();
-  form.append('file', photo, 'photo.jpg');
-  form.append('alt', spec.name);
-  await api.postForm(`/media/products/${product.id}/images`, form);
+  for (const [i, photo] of photos.entries()) {
+    const form = new FormData();
+    form.append('file', photo, `photo-${i + 1}.jpg`);
+    form.append('alt', copy?.caption ?? spec.name);
+    await api.postForm(`/media/products/${product.id}/images`, form);
+  }
 
   if (spec.stock > 0) {
     for (const variant of product.variants) {
@@ -235,27 +250,36 @@ async function createProductFromPhoto(spec: NewProductSpec, photo: Blob) {
   return { product, category };
 }
 
-// 📸 Photo → website.
-//   caption "new: Name, 4500[, category][, stock 10]" → creates the product
-//   caption containing an existing product name → attaches to that product
-//   anything else → "From the workshop" gallery post
-bot.on(message('photo'), async (ctx) => {
-  const caption = (ctx.message.caption ?? '').trim();
-
-  // Largest rendition Telegram provides
-  const sizes = ctx.message.photo;
-  const fileId = sizes[sizes.length - 1].file_id;
-
-  await ctx.sendChatAction('upload_photo');
+async function downloadPhoto(ctx: Context, fileId: string): Promise<Blob> {
   const link = await ctx.telegram.getFileLink(fileId);
   const download = await fetch(link.href);
-  if (!download.ok) {
+  if (!download.ok) throw new Error('Telegram file download failed');
+  return new Blob([await download.arrayBuffer()], { type: 'image/jpeg' });
+}
+
+/**
+ * One shoe = one call. `fileIds` is every angle of that shoe: a single photo
+ * message arrives alone, an album (shared media_group_id) arrives as the
+ * whole set. All photos land on the same product / gallery subject.
+ */
+async function handleShoePhotos(ctx: Context, fileIds: string[], caption: string) {
+  await ctx.sendChatAction('upload_photo');
+
+  const blobs: Blob[] = [];
+  for (const fileId of fileIds) {
+    try {
+      blobs.push(await downloadPhoto(ctx, fileId));
+    } catch {
+      // skip photos Telegram refuses to serve; report only if all fail
+    }
+  }
+  if (!blobs.length) {
     await ctx.reply('Could not download that photo from Telegram — try again.');
     return;
   }
-  const blob = new Blob([await download.arrayBuffer()], { type: 'image/jpeg' });
+  const angles = blobs.length > 1 ? ` (${blobs.length} angles)` : '';
 
-  // "new:" caption → create a whole product from this photo
+  // "new:" caption → create a whole product from these photos
   if (/^new\s*:/i.test(caption)) {
     const spec = parseNewProduct(caption);
     if (!spec) {
@@ -266,10 +290,16 @@ bot.on(message('photo'), async (ctx) => {
       );
       return;
     }
-    const { product, category } = await createProductFromPhoto(spec, blob);
+    const copy = await generateShoeCopy(blobs, {
+      name: spec.name,
+      category: spec.category,
+      price: spec.price,
+    });
+    const { product, category } = await createProductFromPhoto(spec, blobs, copy);
     await ctx.reply(
       [
-        `✅ Created ${spec.name}`,
+        `✅ Created ${spec.name}${angles}`,
+        copy ? `📝 "${copy.description}"` : '',
         `Price: Rs. ${spec.price.toLocaleString('en-IN')} · Category: ${category.name}`,
         `Sizes: ${SIZES.join(', ')}` +
           (spec.stock > 0 ? ` · ${spec.stock} pairs per size in stock` : ' · no stock yet'),
@@ -290,14 +320,15 @@ bot.on(message('photo'), async (ctx) => {
     caption.toLowerCase().includes(p.name.toLowerCase()),
   );
 
-  const form = new FormData();
-  form.append('file', blob, 'photo.jpg');
-
   if (product) {
-    form.append('alt', caption);
-    await api.postForm(`/media/products/${product.id}/images`, form);
+    for (const blob of blobs) {
+      const form = new FormData();
+      form.append('file', blob, 'photo.jpg');
+      form.append('alt', caption);
+      await api.postForm(`/media/products/${product.id}/images`, form);
+    }
     await ctx.reply(
-      `📸 Added to ${product.name} — it's live on the product page.\n` +
+      `📸 Added to ${product.name}${angles} — live on the product page.\n` +
         `${WEB_URL}/products/... — caption saved as the image description.`,
     );
     return;
@@ -310,24 +341,91 @@ bot.on(message('photo'), async (ctx) => {
     await ctx.reply(
       [
         '💡 Looks like you want to sell this! To create a buyable product,',
-        'resend the photo with a caption like:',
+        'resend the photo(s) with a caption like:',
         '',
         `new: Product Name, ${priceMatch[1]}, formal, stock 10`,
         '',
-        '(or send it without a price to post it to the website gallery)',
+        '(or send without a price to post to the website gallery)',
       ].join('\n'),
     );
     return;
   }
 
-  form.append('caption', caption);
-  form.append('source', 'telegram');
-  await api.postForm('/media/gallery', form);
+  // No caption and no product match → gallery. If AI copy is enabled, write
+  // the caption from the photos themselves.
+  let galleryCaption = caption;
+  let aiCaptioned = false;
+  if (!galleryCaption) {
+    const copy = await generateShoeCopy(blobs, {});
+    if (copy) {
+      galleryCaption = copy.caption;
+      aiCaptioned = true;
+    }
+  }
+
+  for (const blob of blobs) {
+    const form = new FormData();
+    form.append('file', blob, 'photo.jpg');
+    form.append('caption', galleryCaption);
+    form.append('source', 'telegram');
+    await api.postForm('/media/gallery', form);
+  }
   await ctx.reply(
-    caption
-      ? `📸 Posted to the website gallery with your caption:\n"${caption}"`
-      : '📸 Posted to the website gallery. Tip: send a caption next time and it becomes the description.',
+    galleryCaption
+      ? `📸 Posted to the website gallery${angles} with ${aiCaptioned ? 'an auto-written' : 'your'} caption:\n"${galleryCaption}"`
+      : `📸 Posted to the website gallery${angles}. Tip: send a caption next time and it becomes the description.`,
   );
+}
+
+// Telegram delivers an album as separate messages sharing a media_group_id,
+// with the caption on only one of them. Buffer until the album goes quiet,
+// then process every photo as ONE shoe.
+const ALBUM_SETTLE_MS = 1500;
+interface PendingAlbum {
+  fileIds: string[];
+  caption: string;
+  ctx: Context;
+  timer: NodeJS.Timeout;
+}
+const pendingAlbums = new Map<string, PendingAlbum>();
+
+// 📸 Photo(s) → website.
+//   album (multi-photo message)  → ONE shoe, every photo an angle of it
+//   caption "new: Name, 4500[, category][, stock 10]" → creates the product
+//   caption containing an existing product name → attaches to that product
+//   anything else → "From the workshop" gallery post
+bot.on(message('photo'), async (ctx) => {
+  const caption = (ctx.message.caption ?? '').trim();
+  // Largest rendition Telegram provides
+  const sizes = ctx.message.photo;
+  const fileId = sizes[sizes.length - 1].file_id;
+
+  const groupId = ctx.message.media_group_id;
+  if (!groupId) {
+    await handleShoePhotos(ctx, [fileId], caption);
+    return;
+  }
+
+  const pending = pendingAlbums.get(groupId);
+  if (pending) clearTimeout(pending.timer);
+  const album: PendingAlbum = {
+    fileIds: [...(pending?.fileIds ?? []), fileId],
+    caption: caption || (pending?.caption ?? ''),
+    ctx,
+    timer: setTimeout(() => {
+      pendingAlbums.delete(groupId);
+      // Outside the middleware chain — bot.catch can't see this, so catch here.
+      handleShoePhotos(album.ctx, album.fileIds, album.caption).catch(async (err) => {
+        console.error('album error', err);
+        try {
+          await album.ctx.reply('Something went wrong talking to the ERP. Check that the API is running.');
+        } catch {
+          /* chat unreachable */
+        }
+      });
+    }, ALBUM_SETTLE_MS),
+  };
+  pendingAlbums.set(groupId, album);
 });
 
 bot.catch(async (err, ctx) => {

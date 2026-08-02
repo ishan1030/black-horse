@@ -99,6 +99,20 @@ export async function getGalleryPosts(): Promise<GalleryPost[]> {
   }
 }
 
+/** All published products, optionally filtered to one category slug. */
+export async function getShopProducts(categorySlug?: string): Promise<Product[]> {
+  let categoryFilter = '';
+  if (categorySlug) {
+    const cats = await fetchJson<ApiCategory[]>('/categories');
+    const match = cats?.find((c) => c.slug === categorySlug);
+    if (match) categoryFilter = `&categoryId=${match.id}`;
+  }
+  const data = await fetchJson<{ items: ApiProduct[] }>(
+    `/products?publishedOnly=true&pageSize=100${categoryFilter}`,
+  );
+  return (data?.items ?? []).map(mapProduct);
+}
+
 export async function getCategories(): Promise<Category[]> {
   const data = await fetchJson<ApiCategory[]>('/categories');
   if (!data?.length) return [];

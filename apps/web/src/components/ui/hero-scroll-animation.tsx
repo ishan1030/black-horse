@@ -55,7 +55,7 @@ function HeroSection({ scrollYProgress }: SectionProps) {
         </p>
         <div className="mt-10 flex flex-wrap justify-center gap-3.5">
           <Link
-            href="#featured"
+            href="/products"
             className="rounded-xs bg-ink px-8 py-4 text-[13.5px] font-semibold tracking-wide text-white hover:bg-accent"
           >
             Shop the collection

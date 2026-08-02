@@ -7,6 +7,7 @@ import { Login } from './views/login';
 import { Orders } from './views/orders';
 import { Placeholder } from './views/placeholder';
 import { Pos } from './views/pos';
+import { Products } from './views/products';
 
 type View =
   | 'dashboard'
@@ -52,7 +53,6 @@ export function App() {
       <aside className="side">
         <div className="side-logo">
           <BrandMark className="side-logo-mark" />
-          BLACK&nbsp;HORSE
         </div>
         <nav aria-label="Primary">
           {NAV.map((item) => (
@@ -100,7 +100,8 @@ export function App() {
       {view === 'dashboard' && <Dashboard />}
       {view === 'pos' && <Pos />}
       {view === 'orders' && <Orders />}
-      {view !== 'dashboard' && view !== 'pos' && view !== 'orders' && (
+      {view === 'products' && <Products />}
+      {view !== 'dashboard' && view !== 'pos' && view !== 'orders' && view !== 'products' && (
         <Placeholder title={NAV.find((n) => n.view === view)?.label ?? ''} />
       )}
     </div>

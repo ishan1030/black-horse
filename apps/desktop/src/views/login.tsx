@@ -22,7 +22,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand">
           <BrandMark className="login-mark" />
-          <span>BLACK&nbsp;HORSE&nbsp;ERP</span>
+          <span>ERP</span>
         </div>
         <label>
           Email

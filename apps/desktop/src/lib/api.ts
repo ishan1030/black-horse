@@ -318,6 +318,147 @@ export async function updateOrderStatus(
   }
 }
 
+// ───────── products management ─────────
+
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface AdminVariant {
+  id: string;
+  sku: string;
+  size: string;
+  color: string;
+  price: string;
+  stockQty: number;
+}
+
+export interface AdminProduct {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  isPublished: boolean;
+  category: { id: string; name: string } | null;
+  images: Array<{ url: string }>;
+  variants: AdminVariant[];
+}
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+export async function getCategories(): Promise<Category[]> {
+  return (await fetchJson<Category[]>('/categories')) ?? [];
+}
+
+export async function createCategory(name: string): Promise<Category | null> {
+  return fetchJson<Category>('/categories', {
+    method: 'POST',
+    body: JSON.stringify({ name, slug: slugify(name) }),
+  });
+}
+
+export async function getAdminProducts(): Promise<AdminProduct[]> {
+  const data = await fetchJson<{ items: AdminProduct[] }>('/products?pageSize=100');
+  return data?.items ?? [];
+}
+
+export interface NewProductInput {
+  name: string;
+  categoryId: string;
+  description: string;
+  price: number;
+  costPrice: number;
+  color: string;
+  sizes: string[];
+  isPublished: boolean;
+}
+
+export async function createProduct(
+  input: NewProductInput,
+): Promise<{ ok: boolean; product?: { id: string; slug: string; variants: Array<{ id: string }> }; error?: string }> {
+  const initials = input.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 4);
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  try {
+    const res = await fetch(`${API_URL}/products`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        name: input.name,
+        slug: slugify(input.name),
+        categoryId: input.categoryId,
+        description: input.description || undefined,
+        material: 'Leather',
+        isPublished: input.isPublished,
+        variants: input.sizes.map((size) => ({
+          sku: `${initials}-${suffix}-${size.replace(/[^0-9]/g, '') || size}`,
+          size,
+          color: input.color,
+          price: input.price,
+          costPrice: input.costPrice,
+        })),
+      }),
+    });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+      const msg = Array.isArray(detail?.message) ? detail.message[0] : detail?.message;
+      return { ok: false, error: msg ?? `API responded ${res.status}` };
+    }
+    return { ok: true, product: (await res.json()) as { id: string; slug: string; variants: Array<{ id: string }> } };
+  } catch {
+    return { ok: false, error: 'API unreachable' };
+  }
+}
+
+export async function updateProduct(
+  id: string,
+  patch: { name?: string; description?: string; categoryId?: string; isPublished?: boolean },
+): Promise<boolean> {
+  return (
+    (await fetchJson(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })) !== null
+  );
+}
+
+export async function uploadProductImage(
+  productId: string,
+  file: File,
+  alt: string,
+): Promise<boolean> {
+  try {
+    const form = new FormData();
+    form.append('file', file, file.name || 'photo.jpg');
+    form.append('alt', alt);
+    const res = await fetch(`${API_URL}/media/products/${productId}/images`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function adjustStock(variantId: string, delta: number): Promise<boolean> {
+  return (
+    (await fetchJson('/inventory/adjust', {
+      method: 'POST',
+      body: JSON.stringify({ variantId, delta, type: 'PURCHASE', note: 'Stock via ERP product editor' }),
+    })) !== null
+  );
+}
+
 // ───────── POS ─────────
 
 export interface PosProduct {

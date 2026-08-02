@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PdpActions } from '@/components/pdp-actions';
 import { ProductCard } from '@/components/product-card';
-import { Shoe } from '@/components/shoe';
+import { ProductGallery } from '@/components/product-gallery';
 import { getFeaturedProducts, getProductBySlug, mediaUrl } from '@/lib/api';
 
 function detailSections(material: string): Array<{ title: string; body: React.ReactNode; open?: boolean }> {
@@ -21,7 +21,7 @@ function detailSections(material: string): Array<{ title: string; body: React.Re
     },
     {
       title: 'Materials & care',
-      body: 'Wipe with a soft damp cloth and let it dry away from direct heat. Condition the leather monthly. Every pair carries a 2-year craft warranty.',
+      body: 'Wipe with a soft damp cloth and let it dry away from direct heat. Condition the leather monthly. Every pair carries a 6-month craft warranty.',
     },
     {
       title: 'Shipping & returns',
@@ -57,45 +57,9 @@ export default async function ProductPage({
 
       <div className="grid items-start gap-8 px-5 py-7 pb-22 md:grid-cols-[7fr_5fr] md:gap-18 md:px-16">
         {/* Gallery */}
-        <div className="md:sticky md:top-24">
-          <div className="relative grid aspect-[4/3.1] place-items-center overflow-hidden bg-neutral">
-            {product.images[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={mediaUrl(product.images[0].url)}
-                alt={product.images[0].alt}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            ) : (
-              <Shoe tone="dark" className="w-[70%]" />
-            )}
-          </div>
-          <div className="mt-3 grid grid-cols-4 gap-3">
-            {[0, 1, 2, 3].map((i) => {
-              const img = product.images[i];
-              return (
-                <button
-                  key={i}
-                  aria-label={`View ${i + 1}`}
-                  className={`relative grid aspect-square place-items-center overflow-hidden bg-neutral transition-colors ${
-                    i === 0 ? 'border border-ink' : 'border border-transparent hover:border-muted'
-                  }`}
-                >
-                  {img ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={mediaUrl(img.url)}
-                      alt={img.alt}
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Shoe className="w-[66%]" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <ProductGallery
+          images={product.images.map((img) => ({ url: mediaUrl(img.url), alt: img.alt }))}
+        />
 
         {/* Info */}
         <div>
